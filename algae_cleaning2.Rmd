@@ -1,0 +1,195 @@
+---
+title: "algae_cleaning2"
+output: html_document
+date: "2023-11-14"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Uploading libraries
+```{r}
+library(tidyverse)
+library(stringr)
+library(here)
+library(readxl)
+library(janitor)
+
+rm(list = ls())
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+```
+#1
+#Merging and cleaning data
+```{r}
+#Uploading raw alga weights from an excel file that had each alga as their own column.
+df <- read_csv(here("data", "algaweight1982-2014_raw.csv"))
+df1 <-df %>%
+  mutate(Site=gsub("#","",Site)) %>%
+  filter(!is.na(Art)) %>%
+  mutate_if(is.numeric, ~replace_na(., 0))
+
+#These 4 species are surveyed only in later years. To be consistent, we remove these.
+df1 <- df1[, -c(29,30,31,32)]
+
+#Reading in the taxa names to merge later
+tx <- read_csv(here("data", "Alga_Weights_All_Years_2008_updated_names.csv"))
+tx1 <-tx %>%
+  dplyr::select(SP_CODE,Common_Name,GROUP,SURVEY,KINGDOM,PHYLUM,CLASS,ORDER,FAMILY,GENUS,SPECIES) %>%
+  distinct()%>%
+  mutate(SP_CODE=case_when(
+    SP_CODE=="Ac"~"Art",
+    SP_CODE=="E"~"Eis",
+    SP_CODE=="R"~"Rho",
+    SP_CODE=="Lf"~"Lam",
+    SP_CODE=="F"~"Fau",
+    SP_CODE=="H"~"Hal",
+    SP_CODE=="L"~"Laur",
+    SP_CODE=="Rt"~"RedT",
+    .default = SP_CODE))
+  
+df2 <- df1 %>%
+  pivot_longer(cols =-c("Date","Site","Depth","Rep","note"),names_to = "SP_CODE",values_to = "Wet_wt") %>%
+   mutate(SP_CODE=ifelse(SP_CODE=="GrnT","Green",SP_CODE)) %>%
+   group_by(Date,Site,Depth,Rep,note,SP_CODE) %>%
+   summarise(Wet_wt=sum(Wet_wt,na.rm=T),.groups='drop') %>%
+   ungroup()
+
+#Fixing date format
+df3<-df2 %>%
+  left_join(tx1,by="SP_CODE") %>% 
+  mutate(year=substr(as.character(Date),1,4)) %>%
+  mutate(day=substr(as.character(Date),9,10)) %>% 
+  mutate(month=substr(as.character(Date),6,7)) %>% 
+  rename_with(toupper)
+
+#Reordering columns and cleaning names
+df3 <- df3[,c(18,20,19,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17)]  
+df3 <- clean_names(df3)
+df3$site <- tolower(df3$site)
+df3$sp_code <- tolower(df3$sp_code)
+df3$group <- tolower(df3$group)
+df3$survey <- tolower(df3$survey)
+
+#Renaming species, adding in taxonomic information, and combining unknown categories
+df3 <- df3 %>% 
+  mutate(common_name=ifelse(common_name == "Dictyota/Dictyopteris" , "Dictyota spp.", common_name)) %>% 
+  mutate(common_name=ifelse(common_name == "Fauchea/Fryella" , "Florideophyceae", common_name)) %>% 
+  mutate(common_name=ifelse(common_name == "Filamentous Red Algal Turf" , "Unknown Red", common_name)) %>% 
+  mutate(sp_code=ifelse(sp_code == "redt" , "red", sp_code)) %>% 
+  mutate(sp_code=ifelse(sp_code == "cy" , "stos", sp_code)) 
+
+df3$phylum[df3$common_name=='Unknown Red'] <- 'Rhodophyta'
+df3$phylum[df3$common_name=='Unknown Green'] <- 'Chlorophyta'
+df3$phylum[df3$common_name=='Gymnogongrus spp.'] <- 'Rhodophyta'
+df3$class[df3$common_name=='Gymnogongrus spp.'] <- 'Rhodophyceae'
+df3$order[df3$common_name=='Gymnogongrus spp.'] <- 'Gigartinales'
+df3$family[df3$common_name=='Gymnogongrus spp.'] <- 'Phyllophoraceae'
+df3$genus[df3$common_name=='Gymnogongrus spp.'] <- 'Gymnogongrus'
+df3$order[df3$common_name=='Articulated Corralines'] <- 'Corallinales'
+df3$class[df3$common_name=='Unknown Red'] <- ''
+df3[df3 == ''] <- NA
+names(df3)[names(df3) == 'common_name'] <- 'scientific_name'
+
+#Merging together to two lines of "unknown red" into one distinct row
+df3 <- df3 %>% 
+  distinct()
+
+#Creating major groupings of algae
+df3 <- df3 %>%
+  mutate(major_group = sp_code) %>% 
+  mutate(major_group = if_else(major_group == "art", "red", major_group)) %>% 
+  mutate(major_group = if_else(major_group == "clad", "green", major_group)) %>% 
+  mutate(major_group = if_else(major_group == "cod", "green", major_group)) %>% 
+  mutate(major_group = if_else(major_group == "colp", "brown", major_group))%>%
+  mutate(major_group = if_else(major_group == "stos", "brown", major_group))%>%
+  mutate(major_group = if_else(major_group == "dic", "brown", major_group))%>%
+  mutate(major_group = if_else(major_group == "egr", "brown", major_group))%>%
+  mutate(major_group = if_else(major_group == "egr", "brown", major_group))%>%
+  mutate(major_group = if_else(major_group == "egr", "brown", major_group))%>%
+  mutate(major_group = if_else(major_group == "eis", "brown", major_group))%>%
+  mutate(major_group = if_else(major_group == "hal", "brown", major_group))%>%
+  mutate(major_group = if_else(major_group == "lam", "brown", major_group))%>%
+  mutate(major_group = if_else(major_group == "fau", "red", major_group))%>%
+  mutate(major_group = if_else(major_group == "cho", "red", major_group))%>%
+  mutate(major_group = if_else(major_group == "gel", "red", major_group))%>%
+  mutate(major_group = if_else(major_group == "gr", "red", major_group))%>%
+  mutate(major_group = if_else(major_group == "gn", "red", major_group))%>%
+  mutate(major_group = if_else(major_group == "laur", "red", major_group))%>%
+  mutate(major_group = if_else(major_group == "ploc", "red", major_group))%>%
+  mutate(major_group = if_else(major_group == "pri", "red", major_group)) %>% 
+  mutate(major_group = if_else(major_group == "rho", "red", major_group)) %>%
+  mutate(major_group = if_else(major_group == "gym", "red", major_group))
+
+#Creating functional groupings of algae
+df3 <- df3 %>% 
+  mutate(functional_group = sp_code) %>% 
+  mutate(functional_group = if_else(functional_group == "art", "articulated calcareous", functional_group)) %>% 
+  mutate(functional_group = if_else(functional_group == "clad", "filamentous", functional_group)) %>% 
+  mutate(functional_group = if_else(functional_group == "cod", "corticated macrophyte", functional_group)) %>% 
+  mutate(functional_group = if_else(functional_group == "colp", "corticated macrophyte", functional_group)) %>% 
+  mutate(functional_group = if_else(functional_group == "stos", "leathery macrophyte", functional_group)) %>% 
+  mutate(functional_group = if_else(functional_group == "dic", "corticated foliose", functional_group)) %>% 
+  mutate(functional_group = if_else(functional_group == "egr", "leathery macrophyte", functional_group)) %>% 
+  mutate(functional_group = if_else(functional_group == "eis", "leathery macrophyte", functional_group)) %>% 
+  mutate(functional_group = if_else(functional_group == "fau", "red", functional_group)) %>% 
+  mutate(functional_group = if_else(functional_group == "gel", "corticated macrophyte", functional_group)) %>% 
+  mutate(functional_group = if_else(functional_group == "cho", "corticated macrophyte", functional_group)) %>% 
+  mutate(functional_group = if_else(functional_group == "gn", "corticated macrophyte", functional_group)) %>% 
+  mutate(functional_group = if_else(functional_group == "gr", "corticated macrophyte", functional_group)) %>% 
+  mutate(functional_group = if_else(functional_group == "green", "green", functional_group)) %>% 
+  mutate(functional_group = if_else(functional_group == "gym", "corticated macrophyte", functional_group)) %>% 
+  mutate(functional_group = if_else(functional_group == "hal", "leathery macrophyte", functional_group)) %>% 
+  mutate(functional_group = if_else(functional_group == "lam", "leathery macrophyte", functional_group)) %>% 
+  mutate(functional_group = if_else(functional_group == "laur", "corticated macrophyte", functional_group)) %>% 
+  mutate(functional_group = if_else(functional_group == "ploc", "corticated macrophyte", functional_group)) %>% 
+  mutate(functional_group = if_else(functional_group == "pri", "corticated macrophyte", functional_group)) %>% 
+  mutate(functional_group = if_else(functional_group == "red", "red", functional_group)) %>% 
+  mutate(functional_group = if_else(functional_group == "rho", "red", functional_group)) 
+
+
+```
+
+#Checking sampling frequencies
+```{r}
+#Check sampling consistency
+peace <- df1 %>%
+  distinct(Date,Site,Depth,Rep)%>%
+  group_by(Date,Site)%>%
+  summarise(freq=n())
+
+peace2 <- df3 %>% 
+  distinct(month,site) %>% 
+  group_by(month,site) %>% 
+  summarise(freq=n())
+```
+
+#Exporting .csv files of algae data for all years, sites, etc.
+```{r}
+#Once all checks are completed, create all years files
+write.csv(df3,"../Algae_weight_All_Years_20231115.csv",row.names = F,quote = T,na="-99999") 
+write.csv(df3,"../Algae_weight_All_Years.csv",row.names = F,quote = T,na="-99999")
+```
+
+#2
+#Filtering out prey density sites and a consistently sampled timeframe and exporting new .csv to use for analysis
+```{r}
+#Filtering out prey density sites, consistent months, and continuous years
+prey_density_sites <- c("bc 1", "diablo", "twin west")
+
+oct_nov <- c("10", "11")
+
+continuous_years <- c("1995", "1996","1997", "1998", "1999", "2000", "2001", "2002", "2003", "2004", "2005", "2006", "2007", "2008", "2009", "2010", "2011", "2012", "2013", "2014")
+
+df3_prey <- df3 %>% 
+  filter(site %in% prey_density_sites)
+
+df3_prey_continuous_dates <- df3_prey %>% 
+  filter(year %in% continuous_years)
+
+df3_all_cleaned <- df3_prey_continuous_dates %>% 
+  filter(month %in% oct_nov) %>% 
+  filter(sp_code !="hal")
+
+write.csv(df3_all_cleaned,"../algae_weight_cleaned_years_prey_density_sites.csv",row.names = F,quote = T,na="-99999")
+```

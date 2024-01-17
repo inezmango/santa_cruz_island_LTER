@@ -1,0 +1,383 @@
+---
+title: "invert_cleaning2"
+output: html_document
+date: "2023-11-16"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Uploading libraries
+```{r}
+##Clear R's memory to start with clean slate
+rm(list = ls())
+
+##Import libraries
+library(tidyverse)
+library(stringr)
+library(readxl)
+library(here)
+library(janitor)
+library(vegan)
+
+##Set working directory and import data
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+```
+
+#1
+#Uploading 2009-2014 data
+```{r}
+#Uploading and organizing 2009-2014 data
+split <- read_excel(("/Users/inezmangino/Desktop/santa cruz lter/data/SCI_Resource_Data_2009_2014_raw.xlsx"), sheet ="Split", na=c("","."))
+rough <- read_excel(("/Users/inezmangino/Desktop/santa cruz lter/data/SCI_Resource_Data_2009_2014_raw.xlsx"), sheet ="Rough", na=c("","."))
+
+#Separating the split and rough tabs from the raw excel data
+split1 <-split %>%
+  dplyr::select(-Sorter) %>%
+  mutate(Site=ifelse(Site=="Twin W","Twin West",Site)) %>%
+  mutate_if(is.numeric, ~replace_na(., 0))%>%
+  pivot_longer(cols=`Gammarid_<0.5`:Sponge, names_to="spe",values_to ="measurement") %>% #not really length, just the value from the cell which is number in this case
+  mutate(source="Split") 
+rough1 <-rough %>%
+  dplyr::select(-Sorter) %>%
+  mutate(Site=ifelse(Site=="Twin W","Twin West",Site)) %>%
+  mutate_if(is.numeric, ~replace_na(., 0)) %>%
+  pivot_longer(cols=`Pachy_0.0-9.9`:Sponge, names_to="spe",values_to ="measurement") %>%
+  mutate(source="Rough")
+
+all <- bind_rows(split1,rough1)
+
+all1 <- all %>%
+  separate(spe, into = c("TAXA", "size"), sep="_(?=[^_]+$)")%>%
+  mutate(count = str_extract(TAXA, "[0-9]*$"), TAXA = gsub('[0-9]+', '', TAXA), TAXA=trimws(TAXA)) %>%
+  mutate(year=substr(as.character(Date),1,4)) %>%
+  mutate(day=substr(as.character(Date),9,10)) %>% 
+  mutate(month=substr(as.character(Date),6,7)) %>% 
+  rename_with(toupper) %>%
+  dplyr::select(YEAR, MONTH, DAY, DATE, SITE, DEPTH, REP, TAXA, SIZE, MEASUREMENT, COUNT, FRACTION, SOURCE) 
+
+all1 <-clean_names(all1)
+all1$site <- tolower(all1$site)
+all1$taxa <- tolower(all1$taxa)
+all1$source <- tolower(all1$source)
+
+#Cleaning taxa names for the "size" data frame
+all1 <- all1 %>% 
+  mutate(taxa=ifelse(taxa== "crab larvae", "crab", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "crabs", "crab", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "crabs count", "crab number", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "crab number", "crab", taxa)) %>%
+  mutate(taxa=ifelse(taxa== "crabs number", "crab", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "urchin count", "urchin", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "urchins", "urchin", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "urchins number", "urchin", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "unknown isopod", "isopod", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "isopods", "isopod", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "isopods number", "isopod", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "gammarids", "gammarid", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "gammarids number", "gammarid", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "srs number", "srs", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "lrs number", "lrs", taxa))
+
+#Creating separate count and size data frames because there were counts under the original measurement column.  
+measured_taxa_rough <- c("crab",	"urchin", "srs", "lrs", "isopod", "gammarid")
+measured_taxa_split <- c("crab", "urchin")
+
+#Count data (w/o counts from measured species)
+count_dt <- all1 %>% 
+  filter(!((taxa %in% measured_taxa_rough & source=="rough")|(taxa %in% measured_taxa_split & source=="split"))) 
+count_dt <- subset(count_dt, select= -count)
+colnames(count_dt)[10] = "count"
+
+#Count data (w/counts from measured species) 
+count_dt2 <- all1
+count_dt2 <- subset(count_dt2, select= -count)
+colnames(count_dt2)[10] = "count"
+
+#Size data
+size_dt <- all1 %>% 
+  filter((taxa %in% measured_taxa_rough & source=="rough")|(taxa %in% measured_taxa_split & source=="split"))
+size_dt <- subset(size_dt, select = -size)
+size_dt <-subset(size_dt, select = -count)
+colnames(size_dt)[9] = "size"
+```
+
+#2a
+#Uploading 1982-2008 count data
+```{r}
+#Uploading 1982-2008 count data
+count_1982_2008 <- read_csv(here("data", "SCI_Scrapes_Counted_Invertebrates_1982-2009.csv"))
+
+count_1982_2008 <- count_1982_2008 %>% 
+   mutate(SITE=ifelse(SITE=="Twin W","Twin West", SITE)) %>% 
+   mutate(TAXA = gsub('[].[]', ' ', TAXA), TAXA=trimws(TAXA)) %>% 
+   mutate_if(is.numeric, ~replace_na(., 0)) %>% 
+   mutate(month=substr(as.character(DATE),6,7)) %>%
+   mutate(day=substr(as.character(DATE),9,10)) %>% 
+   rename_with(toupper) %>%
+   dplyr::select(YEAR,MONTH,DAY,DATE,SITE,DEPTH,REP,TAXA,SIZE_CLASS_MG,COUNT,FRACTION_SORTED,SOURCE) %>% 
+   rename(size = SIZE_CLASS_MG)
+
+count_1982_2008 <- clean_names(count_1982_2008)
+count_1982_2008$site <- tolower(count_1982_2008$site)
+count_1982_2008$taxa <- tolower(count_1982_2008$taxa)
+count_1982_2008$source <- tolower(count_1982_2008$source)
+
+#removing 2009 from this data frame because it was less complete than in the 2009-2014 file
+count_1982_2008 <- subset(count_1982_2008, year != 2009)
+colnames(count_1982_2008)[11] = "fraction"
+```
+
+#3a
+#Combining all years of count data
+```{r}
+#Combining all years of count data
+count_dt <- count_dt %>% 
+  mutate(year=as.numeric(year)) %>% 
+  mutate(count=as.numeric(count)) 
+
+count_1982_2008 <- count_1982_2008 %>% 
+  mutate(depth=as.numeric(depth)) %>% 
+  mutate(rep=as.numeric(rep)) %>% 
+  mutate(count=as.numeric(count)) 
+
+count_all <- bind_rows(count_dt, count_1982_2008)
+  
+count_all <- count_all[!(count_all$taxa %in% "unknown"),]
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+count_dt2 <- count_dt2 %>% 
+  mutate(year=as.numeric(year)) %>% 
+  mutate(count=as.numeric(count)) 
+
+count_1982_2008 <- count_1982_2008 %>% 
+  mutate(depth=as.numeric(depth)) %>% 
+  mutate(rep=as.numeric(rep)) %>% 
+  mutate(count=as.numeric(count)) 
+
+count_all2 <- bind_rows(count_dt2, count_1982_2008)
+  
+count_all2 <- count_all2[!(count_all2$taxa %in% "unknown"),]
+```
+
+#4a
+#Cleaning taxa names and adding taxonomic info
+```{r}
+#Cleaning counted names and adding taxonomic info
+ count_all <- count_all %>% 
+ mutate(taxa=ifelse(taxa== "amphipoda", "amphipod", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "caprellids", "caprellid", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "sea anem", "sea anenome", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "anthuroid isopod", "anthuroid", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "bivalves", "bivalve", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "brittle stars", "brittle star", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "caprellids", "caprellid", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "chaet", "polychaete", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "poly", "polychaete", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "poly.", "polychaete", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "cirolanid isopod", "cirolanid", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "coleortera", "coleoptera", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "copepods", "copepod", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "crab larvae", "crab", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "crust", "crustacean", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "crusta", "crustacean", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "cuke", "cucumaria", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "cyphonautes", "bryozoan", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "fish larv.", "fish", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "gastro", "gastropod", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "gastro.", "gastropod", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "gastropods", "gastropod", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "idoteaids", "idotea", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "idoteid", "idotea", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "megalops", "crustacean", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "mysids", "mysid", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "ostracods", "ostracod", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "opisthob", "heterobranch", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "opistob", "heterobranch", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "pachy", "Pachythyone rubra", taxa)) %>%
+  mutate(taxa=ifelse(taxa== "poly", "polychaete", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "poly.", "polychaete", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "sea anem", "anenome", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "sphaerm", "sphaeromatid", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "starfish", "sea star", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "tanaids", "tanaid", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "tube worm", "polychaete", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "unid worm", "unknown worm", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "unidentified", "unknown", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "unidentified amphipod", "amphipod", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "unidentified isopod", "isopod", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "unidentified worm", "unknown worm", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "unidentifiedworm", "unknown worm", taxa)) %>% 
+  mutate(source=ifelse(source== "splits", "split", source)) %>% 
+  mutate(taxa=ifelse(taxa== "jaeropsids", "jaeropsid", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "jaerop", "jaeropsid", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "sea anenome", "anenome", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "shl", "srs", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "shs", "srs", taxa)) 
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ count_all2 <- count_all2 %>% 
+  mutate(taxa=ifelse(taxa== "amphipoda", "amphipod", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "caprellids", "caprellid", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "sea anem", "sea anenome", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "anthuroid isopod", "anthuroid", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "bivalves", "bivalve", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "brittle stars", "brittle star", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "caprellids", "caprellid", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "chaet", "polychaete", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "poly", "polychaete", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "poly.", "polychaete", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "cirolanid isopod", "cirolanid", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "coleortera", "coleoptera", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "copepods", "copepod", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "crab larvae", "crab", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "crust", "crustacean", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "crusta", "crustacean", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "cuke", "cucumaria", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "cyphonautes", "bryozoan", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "fish larv.", "fish", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "gastro", "gastropod", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "gastro.", "gastropod", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "gastropods", "gastropod", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "idoteaids", "idotea", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "idoteid", "idotea", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "megalops", "crustacean", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "mysids", "mysid", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "ostracods", "ostracod", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "opisthob", "heterobranch", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "opistob", "heterobranch", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "pachy", "Pachythyone rubra", taxa)) %>%
+  mutate(taxa=ifelse(taxa== "poly", "polychaete", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "poly.", "polychaete", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "sea anem", "anenome", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "sphaerm", "sphaeromatid", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "starfish", "sea star", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "tanaids", "tanaid", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "tube worm", "polychaete", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "unid worm", "unknown worm", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "unidentified", "unknown", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "unidentified amphipod", "amphipod", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "unidentified isopod", "isopod", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "unidentified worm", "unknown worm", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "unidentifiedworm", "unknown worm", taxa)) %>% 
+  mutate(source=ifelse(source== "splits", "split", source)) %>% 
+  mutate(site=ifelse(site== "frys i", "frys 1", site)) %>% 
+  mutate(site=ifelse(site== "twin e", "twin east", site)) %>% 
+  mutate(taxa=ifelse(taxa== "jaeropsids", "jaeropsid", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "jaerop", "jaeropsid", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "sea anenome", "anenome", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "shl", "srs", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "shs", "srs", taxa)) 
+
+count_all2 <-subset(count_all2, select = -size)
+```
+
+#5a
+#Sum together row with the same taxa name but different counts
+```{r}
+count_all2 <- count_all2[, c(1,2,3,4,5,6,7,8,10,11,9)]
+
+count_all3 <- count_all2 %>% 
+  group_by(year, month, day, date, site, depth, rep, taxa, fraction, source) %>% 
+  mutate(across(c(count), sum)) %>% 
+  distinct()
+```
+
+#6a
+#Filtering out prey density sites/continuous dates for count data
+```{r}
+prey_density_sites <- c("bc 1", "diablo", "twin west")
+continuous_years <- c("1995", "1996","1997", "1998", "1999", "2000", "2001", "2002", "2003", "2004", "2005", "2006", "2007", "2008", "2009", "2010", "2011", "2012", "2013", "2014")
+oct_nov <- c("10", "11")
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+count_all_prey <- count_all3 %>% 
+  filter(site %in% prey_density_sites)
+
+count_all_prey_cont <- count_all_prey %>% 
+  filter(year %in% continuous_years)
+
+count_all3_cleaned <- count_all_prey_cont %>% 
+  filter(month %in% oct_nov)
+```
+
+#2b
+#Uploading 1982-2008 size data
+```{r}
+#Uploading 1982-2008 measurement data
+measure_1982_2008 <- read_csv(here("data", "SCI_Scrapes_Measured_Invertebrates_1982-2009.csv"))
+
+measure_1982_2008 <- measure_1982_2008 %>% 
+   mutate(SITE=ifelse(SITE=="Twin W","Twin West", SITE)) %>% 
+   mutate_if(is.numeric, ~replace_na(., 0)) %>% 
+   mutate(month=substr(as.character(DATE),6,7)) %>%
+   mutate(day=substr(as.character(DATE),9,10)) %>% 
+   rename_with(toupper) %>%
+   select(YEAR,MONTH,DAY,DATE,SITE,DEPTH,REP,TAXA,SIZE,COUNT,FRACTION_SORTED,SOURCE)
+
+measure_1982_2008 <- clean_names(measure_1982_2008)
+measure_1982_2008$site <- tolower(measure_1982_2008$site)
+measure_1982_2008$taxa <- tolower(measure_1982_2008$taxa)
+measure_1982_2008$source <- tolower(measure_1982_2008$source)
+
+#removing 2009 from this data frame
+measure_1982_2008 <- subset(measure_1982_2008, year != 2009)
+colnames(measure_1982_2008)[11] = "fraction"
+```
+
+#3b
+#Combining all years of size data
+```{r}
+size_dt <- size_dt %>% 
+  mutate(year=as.numeric(year))
+
+measure_1982_2008 <- measure_1982_2008 %>% 
+  mutate(depth=as.numeric(depth)) %>% 
+  mutate(rep=as.numeric(rep))
+
+size_all <-bind_rows(size_dt, measure_1982_2008) 
+size_all <-subset(size_all, select = -count)
+
+# dropping 0's from this dataframe
+size_all[size_all == 0] <- NA
+size_all<- na.omit(size_all)
+```
+
+#4b
+#Cleaning taxa names
+```{r}
+size_all <- size_all %>% 
+  mutate(taxa=ifelse(taxa== "crabs", "crab", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "isopods", "isopod", taxa)) %>% 
+  mutate(taxa=ifelse(taxa== "gammarids", "gammarid", taxa)) %>% 
+  mutate(source=ifelse(source== "splits", "split", source)) %>% 
+  mutate(site=ifelse(site== "frys i", "frys 1", site)) %>% 
+  mutate(site=ifelse(site== "twin e", "twin east", site))
+```
+
+#6b
+#Filtering out prey density sites/continuous dates for size data
+```{r}
+size_all_prey <- size_all %>% 
+  filter(site %in% prey_density_sites)
+
+size_all_prey_cont <- size_all_prey %>% 
+  filter(year %in% continuous_years)
+
+size_all_cleaned <- size_all_prey_cont %>% 
+  filter(month %in% oct_nov)
+```
+
+#Adding in taxonomic information to count data
+```{r}
+names <- read_csv(here("data", "invertnamesall.csv"))
+
+count_all3_cleaned2 <-count_all3_cleaned %>%
+  left_join(names,by="taxa")
+```
+
+#EXPORT DATA
+```{r}
+write.csv(size_all_cleaned, "../size_all_cleaned_11282023.csv")
+write.csv(count_all3_cleaned2, "../count_all3_cleaned_12082023.csv")
+```
+
