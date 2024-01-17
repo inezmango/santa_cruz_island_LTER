@@ -61,12 +61,13 @@ invert_count <- invert_count %>%
 
 #Algae calculations 
 ```{r}
-#calculating biomass and assigning a presence&absence count of each alga individual
+#calculating biomass and assigning a presence & absence count of each alga individual
 algae <- algae %>% 
   mutate(area_m2= 0.1) %>% 
   mutate(biomass_gm2 = wet_wt * 10) %>% 
   mutate(PA= case_when(biomass_gm2 >= 1~1, biomass_gm2 == 0~0)) 
 
+#matrix with algae biomass and columns on the end with algae community metrics
 algae_matrix_biomass <- algae %>% 
   filter(sp_code !="red") %>% 
   filter(sp_code !="green") %>%
@@ -74,6 +75,7 @@ algae_matrix_biomass <- algae %>%
   select(year, month, date, site, depth, rep, sp_code, biomass_gm2) %>% 
   pivot_wider(names_from = sp_code, values_from = biomass_gm2)
 
+#algae matrix with 1 or 0 coded into the cell, used to create a richness measure
 algae_matrix_richness <- algae %>% 
   filter(sp_code !="red") %>% 
   filter(sp_code !="green") %>% 
@@ -81,23 +83,42 @@ algae_matrix_richness <- algae %>%
   select(year, month, date, site, depth, rep, sp_code, PA) %>% 
   pivot_wider(names_from = sp_code, values_from = PA)
 
+#algae matrix with 1 or 0 coded into the cell, and then a column on the end summing the total species count
 algae_matrix_richness_2 <- algae_matrix_richness %>% 
   group_by(year, month, date, site, depth, rep) %>% 
   mutate(sum_count = sum(art,	cho,	clad,	cod,	colp,	dic,	egr,	eis,	gel,	gn,	gr,	gym,	lam,	laur,	ploc,	pri, rho,	stos))
 
 #creating a dataframe combining biomass and richness metrics so I can calculate diversity
 biomass_PA <- merge(algae_matrix_biomass, algae_matrix_richness, by= c('year', 'month', 'date', 'site', 'depth', 'rep'))
+
+#algae matrix with biomass and all other temporal and spatial data removed
 algae_matrix_biomass_2 <- algae_matrix_biomass[-c(1:6)]
 
-#calculating biodiversity metrics
+#biodiversity metrics
 algae_matrix_biomass$richness <- apply(algae_matrix_biomass[,7:24], 1, function(i) sum(i>0))
 algae_matrix_biomass$shannon <- diversity(algae_matrix_biomass_2, index = 'shannon') 
 algae_matrix_biomass$simpson <- diversity(algae_matrix_biomass_2, index = 'simpson') 
 algae_matrix_biomass$invsimpson <- diversity(algae_matrix_biomass_2, index = 'invsimpson') 
 algae_matrix_biomass <- algae_matrix_biomass %>% 
   mutate(div_order1= exp(shannon))
+#add a column for every row that sums the algae biomass
+algae_matrix_biomass$sum_algae_biomass <- rowSums(algae_matrix_biomass[,7:24])
+#add a column for every row that identifies the dominant algae species for values greater than zero
+algae_matrix_biomass$dominant_algae <- apply(algae_matrix_biomass[,7:24], 1, function(i) names(i)[i==max(i)])
+
+#calculate which species of algae were the top 10 most dominant (in terms of biomass) over the entire time series
+dominant_algae_species <- algae_matrix_biomass %>% 
+  summarise(across(art:stos, sum)) %>% 
+  pivot_longer(cols = art:stos, names_to = "species", values_to = "biomass") %>% 
+  arrange(desc(biomass)) %>% 
+  filter(biomass > 0) %>% 
+  mutate(species = fct_reorder(species, biomass)) %>% 
+  mutate(species = fct_rev(species)) %>% 
+  mutate(species = fct_relevel(species, "art", "gr", "rho", "cod", "colp", "eis", "stos", "dic", "laur", "ploc"))
+dominant_algae_species <- dominant_algae_species[-c(11:16),]
 ```
 
+#Algae plots
 ```{r}
 algae_hill1 <- algae_matrix_biomass %>% 
   group_by(year) %>% 
@@ -110,7 +131,6 @@ ggplot(algae_hill1, aes(x=year, y=mean_hill)) +
   labs(title="Mean Hill Diversity Over Time", x="Year", y="Mean Hill Diversity") +
   theme(plot.title = element_text(hjust = 0.5))
 ```
-
 
 #EDA: algae
 ```{r}
@@ -201,6 +221,37 @@ invert_order_test <- invert_scaled_order %>%
   summarise(scaled_count = sum(scaled_count)) 
 ```
 
+#1/17/2023 updates
+```{r}
+#create a master dataframe combining algae biomass and invert counts
+invert_algae <- merge(invert_family_matrix_richness, algae_matrix_biomass, by= c('year', 'month', 'date', 'site', 'depth', 'rep'))
+
+invert_algae %>% 
+  mutate(dominant_algae = apply(algae_matrix_biomass[,7:24], 1, function(i) names(i)[i==max(i)]))
+
+
+
+```
+
+```{r}
+#create a plot of invert shannon diversity (shannon.x) versus algae biomass (sum_algae_biomass)
+invert_algae %>%
+  ggplot(aes(x = sum_algae_biomass, y = shannon.x)) +
+  geom_point() +
+  labs(title="Invert Shannon Diversity vs. Algae Biomass", x="Algae Biomass (g)", y="Invert Shannon Diversity") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  geom_point(aes(color = depth)) +
+  geom_point(aes(shape = dominant_algae))
+
+#why isnt my dominant algae column showing up in the merged dataframe invert_algae?
+
+
+```
+
+
+
+
+#species accumulation curves
 ```{r}
 #species accumulation curve  
 invert_species_curve <- specaccum(comm = invert_family_matrix_richness_2, method = "random", permutations = 1000) 
@@ -245,9 +296,6 @@ ggplot(invert_richness, aes(x=year, y=mean_richness)) +
 ```
 
 ```{r}
-```
-
-```{r}
 hi <- invert_scaled %>%
   distinct(date,site,depth,rep)%>%
   group_by(date,site, depth)%>%
@@ -261,7 +309,7 @@ histogram(algae_stats$total_wetwt_g)
 qqplot(year, total_wetwt_g)
 ```
 
-
+#attempting to make a normalized density curve
 ```{r}
 #copying the normalized density code
 algae_stats <- algae %>% 
