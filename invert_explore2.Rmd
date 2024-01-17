@@ -1,0 +1,151 @@
+---
+title: "invert_explore2"
+output: html_document
+date: "2023-08-21"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#uploading packages
+```{r}
+library(tidyverse)
+library(stringr)
+library(readxl)
+library(here)
+library(janitor)
+library(vegan)
+library(ggplot2)
+library(dplyr)
+library(hrbrthemes)
+library(forcats)
+library(lme4)
+library(glmmTMB)
+library(corrplot)
+library(biostat3)
+library(explore)
+library(performance)
+library(see)
+library(patchwork)
+library(car)
+library(plotrix)
+```
+
+#uploading data
+##chaning -99999 to NA, think about whether you need to change this to zero's
+```{r}
+size_data <- read_csv(here("data", "SCI_size_data_1982-2014.csv"))
+count_data <- read_csv(here("data", "SCI_count_data_1982-2014.csv"))
+count_data[count_data == -99999] <- NA
+size_data <-subset(size_data, select = -count)
+```
+
+# pulling out the three main prey density sites
+## the other sites, dates, etc were randomly sampled
+```{r}
+prey_density_sites <- c("bc 1", "diablo", "twin west")
+
+size_main3 <- size_data %>% 
+  filter(site %in% prey_density_sites)
+
+count_main3 <- count_data %>% 
+  filter(site %in% prey_density_sites)
+
+size_main3 <- size_main3 %>% 
+  drop_na(size)
+
+count_main3[count_main3 == 0] <- NA
+
+count_main3 <- count_main3 %>% 
+  drop_na(count)
+
+size_stats <- size_main3 %>%  
+  group_by(year, site, depth, taxa) %>% 
+  summarise(mean_size = mean(size), 
+            sd_size = sd(size), 
+            var_size = var(size))
+
+#need to combine the size class ranges before the counts average
+## actually i think by not grouping by the size column this calculation lumps them all together! woohoo.
+count_stats <- count_main3 %>%  
+  group_by(year, site, depth, taxa) %>% 
+  summarise(mean_count = mean(count),
+            sd_count = sd(count), 
+            var_count = var(count))
+
+most_abundant_inverts <- c("caprellid", "copepod", "ostracod", "gastropod", "bivalve", "heterobranch", "cucumaria", "munnidae", "nematode", "nudibranch", "pachy", "gammarid", "polychaete", "tanaid")
+
+count_stats_most_abundant <- count_stats %>% 
+  filter(taxa %in% most_abundant_inverts)
+```
+
+# frequency summaries
+```{r}
+i1<- count_main3 %>% 
+  distinct(year, site, depth, rep) %>% 
+  group_by(year, site, depth) %>% 
+   summarise(freq=n())
+
+i2<- size_main3 %>% 
+  distinct(year, site, depth, rep) %>% 
+  group_by(year, site, depth) %>% 
+   summarise(freq=n())
+```
+
+#exporting frequency data for records
+```{r}
+write.csv(i1, "/Users/inezmangino/Desktop/SCI_LTER/frequencies_count.csv", row.names=FALSE)
+
+write.csv(i2, "/Users/inezmangino/Desktop/SCI_LTER/frequencies_size.csv", row.names=FALSE)
+```
+
+```{r}
+hey_size <- read_csv(here("frequencies_size.csv"))
+
+hey_size <- hey_size %>% 
+  pivot_wider(names_from = site, values_from = freq)
+
+hey_count <- read_csv(here("frequencies_count.csv"))
+
+hey_count <- hey_count %>% 
+  pivot_wider(names_from = site, values_from = freq)
+```
+
+```{r}
+write.csv(hey_size, "/Users/inezmangino/Desktop/SCI_LTER/frequencies_size3.csv", row.names=FALSE)
+write.csv(hey_count, "/Users/inezmangino/Desktop/SCI_LTER/frequencies_count3.csv", row.names=FALSE)
+```
+
+```{r}
+unique(count_main3$year)
+```
+
+#invert size/count plotted over all years
+```{r}
+ggplot(data = count_stats_most_abundant, aes(x = year, y= mean_count, group = taxa, colour = taxa)) +
+  geom_point(size= 1) + facet_wrap(facets = ~reorder(taxa, -mean_count))
+
+ggplot(data = size_main3, aes(x = year, y= size, group = taxa, colour = taxa)) +
+  geom_point(size= 1) + facet_wrap(~taxa)
+```
+
+# how indiviudal taxa counts vary through time
+```{r}
+ggplot(data = count_cop, aes(x = year, y= count)) +
+  geom_line()
+
+ggplot(data = count_cop, aes(x = year, y = count, group = taxa, colour = taxa)) +
+  geom_line() + geom_point() + theme(axis.text.x = element_text(angle = 45, size = 5)) + theme_bw()
+```
+
+# playing with main3 data
+```{r}
+ggplot(data = main3_count, aes(x = year, y= count, group = taxa, colour = taxa)) +
+  geom_point(size= 1)
+```
+
+```{r}
+write.csv(count_stats_most_abundant,"/Users/inezmangino/Desktop/SCI_LTER/data/count_stats_most_abundant.csv", row.names=FALSE)
+```
+

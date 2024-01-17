@@ -1,0 +1,125 @@
+---
+title: "algae+inverts"
+output: html_document
+date: "2023-10-09"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(tidyverse)
+```
+
+```{r}
+algae_sma <- read_csv(here("data", "algae_stats_most_abundant.csv"))
+invert_sma <-read_csv(here("data", "count_stats_most_abundant.csv"))
+
+algae_sma = subset(algae_sma, select = -c(major_group, se_weight))
+
+algae_sma <- algae_sma %>% 
+  dplyr::rename(taxa= common_name, mean= mean_weight, sd= sd_weight, var= var_weight)
+
+invert_sma <- invert_sma %>% 
+  dplyr::rename(mean= mean_count, sd= sd_count, var= var_count)
+
+algae_and_invert <- rbind(algae_sma, invert_sma)
+
+
+unique(algae_sma$taxa)
+
+algae_and_invert <- algae_and_invert %>% 
+  mutate(type = case_when(taxa == 'Articulated Corralines' | 
+                          taxa == 'Chondracanthus spp.' | 
+                          taxa == 'Codium spp.' |
+                          taxa ==  'Egregia' |
+                          taxa == 'Eisenia' |
+                          taxa == 'Gelidium nudifrons' |
+                          taxa == 'Gelidium robustum'  |
+                          taxa == 'Gym' | 
+                          taxa == 'Laminaria farlowii' |
+                          taxa == 'Laurencia spp.' |
+                          taxa == 'Prionitis' | 
+                          taxa == 'Rhodymeniales' ~ 'algae' ,
+                          taxa == 'bivalve' |
+                          taxa ==  'caprellid' |
+                          taxa ==   'copepod' |
+                          taxa ==   'cucumaria' |   
+                          taxa ==   'gammarid'  |   
+                          taxa ==   'gastropod' |   
+                          taxa ==   'nematode'  |   
+                          taxa ==   'nudibranch' |  
+                          taxa ==   'polychaete' |  
+                          taxa ==  'tanaid' |
+                          taxa ==  'munnidae' |
+                          taxa ==  'ostracod' |
+                          taxa ==  'pachy' |
+                          taxa ==  'heterobranch' ~ 'invert'))
+
+```
+
+```{r}
+
+algae_sma_2 <- algae_sma %>% 
+  filter(!common_name == "Gym") %>% 
+  filter(!common_name == "Laurencia spp.") %>% 
+  filter(!common_name == "Egregia") %>% 
+  filter(!common_name == "Laminaria farlowii") %>% 
+  filter(!common_name == "Prionitis") %>% 
+  filter(!common_name == "Codium spp.") 
+
+invert_sma_2 <- invert_sma %>% 
+  filter(!taxa == "pachy") %>% 
+  filter(!taxa == "nudibranch") %>% 
+  filter(!taxa == "heterobranch") %>% 
+  filter(!taxa == "cucumaria") %>% 
+  filter(!taxa == "munnidae") %>% 
+  filter(!taxa == "nematode") %>% 
+  filter(!taxa == "gammarid") %>% 
+  filter(!taxa == "gastropod") %>% 
+  filter(!taxa == "bivalve") %>% 
+  filter(!taxa == "polychaete") %>% 
+  filter(!taxa == "tanaid")
+
+invert_sma_3 <- invert_sma %>% 
+   filter(!taxa == "pachy") %>% 
+  filter(!taxa == "nudibranch") %>% 
+  filter(!taxa == "heterobranch") %>% 
+  filter(!taxa == "cucumaria") %>% 
+  filter(!taxa == "munnidae") %>% 
+  filter(!taxa == "nematode") %>% 
+  filter(!taxa == "caprellid") %>% 
+  filter(!taxa == "copepod") %>% 
+  filter(!taxa == "ostracod")
+
+algae_sma_3 <- algae_sma_2 %>% 
+  filter(!common_name == "Chondracanthus spp.") %>% 
+  filter(!common_name == "Gelidium nudifrons") %>% 
+  filter(!common_name == "Rhodymeniales")
+
+algae_sma_4 <- algae_sma_2 %>% 
+  filter(!common_name == "Articulated Corralines") %>% 
+  filter(!common_name == "Gelidium robustum") %>% 
+  filter(!common_name == "Eisenia")
+
+  
+ggplot(data = algae_sma_3, aes(x = year, y = mean_weight, group = common_name, colour = common_name)) +
+  geom_line() + theme(axis.text.x = element_text(angle = 45, size = 5)) + facet_wrap(facets = ~reorder(common_name, -mean_weight), ncol= 1) + theme_bw() + labs(y="mean wet weight (g)", x= "year") + stat_summary(aes(year, mean_weight), geom= "point", fun = mean, shape= 16, size= 0.8) +
+  geom_errorbar(aes(ymin= mean_weight- sd_weight, ymax= mean_weight + sd_weight), width= 0.01, size= 0.09) + coord_cartesian(ylim = c(0,970))
+
+ggplot(data = algae_sma_4, aes(x = year, y = mean_weight, group = common_name, colour = common_name)) +
+  geom_line() + theme(axis.text.x = element_text(angle = 45, size = 5)) + facet_wrap(facets = ~reorder(common_name, -mean_weight), ncol=1) + theme_bw() + labs(y="mean wet weight (g)", x= "year") + stat_summary(aes(year, mean_weight), geom= "point", fun = mean, shape= 16, size= 0.8) +
+  geom_errorbar(aes(ymin= mean_weight- sd_weight, ymax= mean_weight + sd_weight), width= 0.01, size= 0.09) + coord_cartesian(ylim = c(0,420))
+
+ggplot(data = invert_sma_2, aes(x = year, y = mean_count, group = taxa, colour = taxa)) +
+  geom_line() + theme(axis.text.x = element_text(angle = 45, size = 5)) + facet_wrap(facets = ~reorder(taxa, -mean_count), ncol = 1) + theme_bw() + labs(y="mean counts", x= "year") + stat_summary(aes(year, mean_count), geom= "point", fun = mean, shape= 16, size= 0.8) + geom_errorbar(aes(ymin= mean_count- sd_count, ymax= mean_count + sd_count), width= 0.01, size= 0.09) + coord_cartesian(ylim = c(0,1400)) 
+
+ggplot(data = invert_sma_3, aes(x = year, y = mean_count, group = taxa, colour = taxa)) +
+  geom_line() + theme(axis.text.x = element_text(angle = 45, size = 5)) + facet_wrap(facets = ~reorder(taxa, -mean_count)) + theme_bw() + labs(y="mean counts", x= "year") + stat_summary(aes(year, mean_count), geom= "point", fun = mean, shape= 16, size= 0.8) + geom_errorbar(aes(ymin= mean_count- sd_count, ymax= mean_count + sd_count), width= 0.01, size= 0.09) + coord_cartesian(ylim = c(0,330)) 
+```
+
+
+
+

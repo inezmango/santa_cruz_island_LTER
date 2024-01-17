@@ -1,0 +1,306 @@
+---
+title: "algae_explore"
+output: html_document
+date: "2023-08-08"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# uploading packages
+```{r}
+library(tidyverse)
+library(stringr)
+library(readxl)
+library(here)
+library(janitor)
+library(vegan)
+library(ggplot2)
+library(dplyr)
+library(lme4)
+library(glmmTMB)
+library(corrplot)
+library(biostat3)
+library(explore)
+library(performance)
+library(see)
+library(patchwork)
+library(car)
+library(plotrix)
+```
+
+# uploading csv
+```{r}
+algae <- read_csv(here("data", "Algae_weight_All_Years_20230815.csv"))
+```
+
+# frequency summaries
+```{r}
+a1 <- main3_algae %>%
+  distinct(year,site,depth,rep)%>%
+  group_by(year,site, depth)%>%
+  summarise(freq=n())
+
+a2 <- main3_algae %>%
+  distinct(year,site,depth)%>%
+  group_by(year,site)%>%
+  summarise(freq=n())
+
+a3 <- main3_algae %>% 
+  distinct(year, site) %>% 
+  group_by(site) %>% 
+  summarise(freq=n())
+
+a4 <- algae %>% 
+  distinct(year) %>% 
+  group_by(year) %>% 
+  summarise(freq=n())
+
+a5 <- main3_algae %>% 
+  distinct(year, rep) %>% 
+  group_by(year) %>% 
+  summarise(freq=n())
+
+a6 <- main3_algae %>% 
+  distinct(year, depth, rep) %>% 
+  group_by(year, depth) %>% 
+   summarise(freq=n())
+
+a7 <- main3_algae %>% 
+  distinct(year, site, rep) %>% 
+  group_by(year, site) %>% 
+  summarise(freq=n())
+
+a8 <- main3_algae %>% 
+  distinct(year, site, depth, rep) %>% 
+  group_by(year, site, depth) %>% 
+   summarise(freq=n())
+
+# there are 23 options of species codes on each replicate of the RPC survey
+```
+
+# pulling out the three main prey density sites
+# pulling out the most abundant algae species
+## the other sites, dates, etc were randomly sampled
+```{r}
+unique(algae$site)
+
+prey_density_sites <- c("bc 1", "diablo", "twin west")
+
+most_abundant_algae <- c("Gelidium robustum", "Articulated Corralines", "Eisenia", "Chondracanthus spp.", "Gelidium nudifrons", "Rhodymeniales", "Codium spp.", "Prionitis", "Laminaria farlowii", "Egregia", "Laurencia spp.", "Gym")
+
+algae_main3 <- algae %>% 
+  filter(site %in% prey_density_sites)
+```
+
+# linear model assumption testing
+```{r}
+# 1. linearity 
+plot(mod_1, 1)
+plot(mod_2, 1)
+
+# 2. independence of errors. acf plot of residuals checks for autocorrelation
+plot(mod_1, 2)
+plot(mod_2, 2)
+
+acf(resid(mod_1))
+acf(resid(mod_2))
+
+# 3. homoscedasticity. residuals vs. fitted values scatter plot
+plot(mod_1, 3)
+plot(mod_2, 3)
+
+# 4. normality of residuals. QQ plot
+plot(mod_1, 4)
+plot(mod_2, 4)
+
+hist(resid(mod_1))
+hist(resid(mod_2))
+
+plot(mod_1, 5)
+plot(mod_2, 5)
+```
+
+# running a linear model ? 
+```{r}
+mod_1 <- lm(wet_wt ~ depth, data= algae_main3)
+mod_2 <- lm(wet_wt ~ year, data= algae_main3)
+
+summary(mod_1)
+summary(mod_2)
+
+plot(wet_wt ~ depth, data= algae_main3, pch=16)
+plot(wet_wt ~ year, data= algae_main3, pch=16)
+```
+
+# calculations for data analysis: biomass, mean, sd, se, variance
+```{r}
+algae_stats <- algae_main3 %>%  
+  group_by(year, site, depth, common_name, major_group) %>%
+  summarise(mean_weight = mean(wet_wt), 
+            sd_weight = sd(wet_wt), 
+            var_weight = var(wet_wt),
+            se_weight = std.error(wet_wt),
+            meansd_l= mean_weight - sd_weight,
+            meansd_u = mean_weight + sd_weight)
+
+
+algae_stats_most_abundant <- algae_stats %>% 
+  filter(common_name %in% most_abundant_algae)
+
+algae_stats <- mutate(algae_stats, mean_biomass = mean_weight * 0.1)
+```
+
+```{r}
+hist(algae_stats[["mean_weight"]], freq = FALSE)
+lines(density(algae_stats[["mean_weight"]]))
+```
+
+# #plotting MEAN algae weight over: time, depth, site
+```{r}
+ggplot(data = algae_stats, aes(x = year, y= mean_weight)) + geom_line()
+
+ggplot(algae_stats, aes(x= year, y= mean_weight)) + geom_point() + labs(x= "year", y= "Algae Weight") + theme_bw()
+
+ggplot(data = algae_stats, aes(x = depth, y= mean_weight)) + geom_line()
+
+ggplot(data = algae_stats, aes(x = site, y= mean_weight)) + geom_line()
+
+ggplot(data = algae_stats, aes(x = reorder(common_name, -mean_weight), y= mean_weight)) +
+  geom_point() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) 
+
+ggplot(data = algae_stats, aes(x = reorder(common_name, -mean_weight), y= mean_weight)) +
+  geom_line()+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) 
+
+ggplot(data = algae_stats, aes(x = year, y = mean_weight, group = common_name, colour = depth)) +
+  geom_line() + theme(axis.text.x = element_text(angle = 45, size = 5)) +
+  facet_wrap(facets = ~reorder(common_name, -mean_weight)) + theme_bw()
+
+ggplot(data = algae_stats, aes(x = year, y = mean_weight, group = common_name, colour = common_name)) +
+  geom_line() + theme(axis.text.x = element_text(angle = 45, size = 5)) +
+  facet_wrap(facets = ~reorder(common_name, -mean_weight)) + theme_bw()
+
+
+# filtered by only most 12 abundant algae spp.
+ggplot(data = algae_stats_most_abundant, aes(x = year, y = mean_weight, group = common_name, colour = common_name)) +
+  geom_line() + theme(axis.text.x = element_text(angle = 45, size = 5)) +
+  facet_wrap(facets = ~reorder(common_name, -mean_weight)) + theme_bw()
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+pdf("plot1.pdf")
+ggplot(algae_stats, aes(x=year, y=mean_weight, group= common_name, colour= common_name)) +
+  geom_line() + xlab("mean wet weight") + facet_wrap(facets= ~reorder(common_name, -mean_weight))
+dev.off()
+
+ggplot(algae_stats, aes(x=year, y=mean_weight, group= common_name, colour= common_name)) +
+  geom_line() + xlab("mean wet weight") 
+
+pdf("plot1.pdf")
+ggplot(algae_stats, aes(x=depth, y=mean_weight, group= common_name, colour= common_name)) +
+  geom_line() + xlab("mean wet weight") + facet_wrap( ~ common_name)
+dev.off()
+```
+
+# most abundant algae graphs
+```{r}
+ggplot(data = algae_stats_most_abundant, aes(x = year, y = mean_weight, group = common_name, colour = common_name)) +
+  geom_line() + theme(axis.text.x = element_text(angle = 45, size = 5)) +
+  facet_wrap(facets = ~reorder(common_name, -mean_weight)) + theme_bw()
+
+ggplot(data = algae_stats_most_abundant, aes(x = year, y = mean_weight, group = common_name, colour = depth)) +
+  geom_line() + theme(axis.text.x = element_text(angle = 45, size = 5)) +
+  facet_wrap(facets = ~reorder(common_name, -mean_weight)) + theme_bw()
+
+ggplot(data = algae_stats_most_abundant, aes(x = year, y = mean_weight, group = common_name, colour = depth)) +
+  geom_point() + theme(axis.text.x = element_text(angle = 45, size = 5)) +
+  facet_wrap(facets = ~reorder(common_name, -mean_weight)) + theme_bw()
+```
+
+
+# EDA: histograms, qq, etc
+```{r}
+ggplot(data = algae_stats, aes(x=mean_weight)) +
+  geom_histogram(fill= "steelblue", color= "black") +
+  ggtitle("Histogram of algae weight")
+
+qq_algae <- ggplot(algae_stats, aes(sample = mean_weight)) + geom_qq() +stat_qq() + stat_qq_line() + theme_bw()
+qq_algae
+```
+
+# shiny app to explore data
+```{r}
+algae_stats %>%  explore()
+```
+
+# builing generalized linear model's
+```{r}
+glm(formula = mean_weight ~ algae_stats + common_name + depth + site, family =  "gaussian", data = algae_avg)
+```
+
+```{r}
+mod1 <- glm(mean_weight ~ common_name, data = algae_stats)
+
+summary(mod1)
+#lets break this table down
+```
+
+# finding my distribution
+```{r}
+```
+
+# smith textbook notes on EDA
+```{r}
+str(algae_stats)
+colSums(is.na(algae_stats))
+boxplot(mean_weight ~ common_name,
+        data= algae_stats)
+
+boxplot(mean_weight ~ depth,
+        data= algae_stats)
+
+#normality and homogeneity of the dependent variable
+## 1. the distribution of a continuous variable can be visualized by dividing the x-axis into "bins" 
+## and counting the number of observations in each bin as a frequency polygon
+ggplot() + geom_freqpoly(data = algae_stats, aes(mean_weight), bins = 7)
+
+## 2. homogeneity of variance is an even distribution of covariate values around the
+## mean and is an important assumption of a Gaussian GLM.
+leveneTest(algae_stats$mean_weight,
+            algae_stats$common_name,
+            location= c("median"), trim.alpha = 0.25)
+
+# what percentage of the response variable are zero's?
+sum(algae_stats$mean_weight == 0,
+    na.rm = TRUE) * 100 / nrow(algae_stats)
+
+#multicollinearity among covariates
+vif(lm(mean_weight ~ site + year,
+       data= algae_stats))
+
+
+xyplot(mean_weight ~ year | site, data = algae_stats,
+ layout = c(2,2), 
+ xlab = list(label = "weight", cex = 1.2),
+ ylab = list(label = "year",cex = 1.2),
+ strip = function(bg = 'white', ...)
+ strip.default(bg = 'white', ...),
+ scales = list(alternating = TRUE,
+ x = list(relation = "free"),
+ y = list(relation = "same")),
+ panel = function(x,y){
+ panel.grid(h = -1, v = 2)
+ panel.points(x,y, col = 1,
+pch = 16,
+ cex = 1.2)
+ panel.abline(lm(y~x),
+col = 1,
+lwd = 5)})
+```
+
+```{r}
+write.csv(algae_stats_most_abundant,"/Users/inezmangino/Desktop/SCI_LTER/data/algae_stats_most_abundant.csv", row.names=FALSE)
+```
+
+
+

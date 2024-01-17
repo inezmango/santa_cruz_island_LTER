@@ -1,0 +1,214 @@
+---
+title: "invert_explore"
+output: html_document
+date: "2023-08-04"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Measured species
+## in the protocol it says that only the following were measured: 
+### Family: Gammaridae
+### Family: Mysidae
+## Order: Isopoda
+## Order: Decapoda
+#Class: Echinoidea
+
+```{r}
+library(tidyverse)
+library(stringr)
+library(readxl)
+library(here)
+library(janitor)
+library(vegan)
+library(ggplot2)
+library(dplyr)
+library(hrbrthemes)
+library(forcats)
+```
+
+# uploading data
+```{r}
+count_measure_2009_2014 <- read_csv(here("data", "SCR_Invert_measure_count_2009-2014_20230803.csv"))
+count_1982_2008 <- read_csv(here("data", "SCR_Invert_count_1982-2008_08172023.csv"))
+measure_1982_2008 <- read_csv(here("data", "SCR_Invert_measure_1982-2008_08172023.csv"))
+```
+# invert summaries
+```{r}
+## counted
+# how many unique reps per depth, site, date
+i1 <- count_1982_2008 %>%
+  distinct(date,site,depth,rep)%>%
+  group_by(date,site)%>%
+  summarise(freq=n())
+
+# how many unique depths per site, date
+i2 <- count_1982_2008 %>%
+  distinct(date,site,depth)%>%
+  group_by(date,site)%>%
+  summarise(freq=n())
+
+# how many unique sampling events per site
+i3 <- count_1982_2008 %>% 
+  distinct(date, site) %>% 
+  group_by(site) %>% 
+  summarise(freq=n())
+
+# how many unique sampling events per year
+i4 <- count_1982_2008 %>% 
+  distinct(date, year) %>% 
+  group_by(year) %>% 
+  summarise(freq=n())
+
+## measured
+i5 <- measure_1982_2008 %>%
+  distinct(date,site,depth,rep)%>%
+  group_by(date,site)%>%
+  summarise(freq=n())
+
+# how many unique depths per site, date
+i6 <- measure_1982_2008 %>%
+  distinct(date,site,depth)%>%
+  group_by(date,site)%>%
+  summarise(freq=n())
+
+# how many unique sampling events per site
+i7 <- measure_1982_2008 %>% 
+  distinct(date, site) %>% 
+  group_by(site) %>% 
+  summarise(freq=n())
+
+# how many unique sampling events per year
+i8 <- measure_1982_2008 %>% 
+  distinct(date, year) %>% 
+  group_by(year) %>% 
+  summarise(freq=n())
+
+## count+measured
+i9 <- count_measure_2009_2014 %>%
+  distinct(date,site,depth,rep)%>%
+  group_by(date,site)%>%
+  summarise(freq=n())
+
+# how many unique depths per site, date
+i10 <- count_measure_2009_2014 %>%
+  distinct(date,site,depth)%>%
+  group_by(date,site)%>%
+  summarise(freq=n())
+
+# how many unique sampling events per site
+i11 <- count_measure_2009_2014 %>% 
+  distinct(date, site) %>% 
+  group_by(site) %>% 
+  summarise(freq=n())
+
+# how many unique sampling events per year
+i12 <- count_measure_2009_2014 %>% 
+  distinct(date, year) %>% 
+  group_by(year) %>% 
+  summarise(freq=n())
+```
+
+```{r}
+count_2009_older_years <- count_1982_2009 %>% 
+  filter(year == "2009")
+
+measure_2009_older_years <- measure_1982_2009 %>% 
+  filter(year == "2009")
+
+count_measure_2009_newer_years <- count_measure_2009_2014 %>% 
+  filter(year == "2009")
+
+unique(count_2009_older_years$date)
+unique(measure_2009_older_years$date)
+unique(count_measure_2009_newer_years$date)
+
+#this shows that the 2009-2014 data file has the most complete 2009 data because it was sampling events from BOTH 2009-11-05 & 2009-11-20
+```
+
+### NEED TO FIX THIS BEFORE CONTINUING WITH EXPLORATION -
+# playing around with size data from 1982-2009
+```{r}
+yearly_measure <- measure_1982_2008 %>% 
+  group_by(year, taxa)
+
+ggplot(data = yearly_measure, aes(x = year, y= size)) +
+  geom_line()
+
+ggplot(data = yearly_measure, aes(x = year, y = size, group = taxa, colour = taxa)) +
+  geom_line() + theme(axis.text.x = element_text(angle = 45, size = 5)) +
+  facet_wrap(~ taxa) + theme_bw()
+  #scale_x_continuous(breaks=c(1981:2010), labels=c(1981:2010),limits=c(1981,2010))
+
+yearly_measure_depth <- yearly_measure %>% 
+  group_by(year, taxa, depth)
+
+ggplot(data = yearly_measure_depth, aes(x = year, y = size, color = depth)) +
+  geom_line() +
+  facet_wrap(~ taxa ~depth) + theme_bw()
+```
+
+```{r}
+count_1982_2008[count_1982_2008 == -99999] <- NA
+count_1982_2008
+         
+#"heterobranch", "copepod", "ostracods", "nematode", "nudibranch", "gastropod")
+
+#caps
+yearly_count_cap <- count_1982_2008 %>% 
+  group_by(year, taxa) %>% 
+  filter(taxa == "caprellid")
+
+ggplot(data = yearly_count_cap, aes(x = year, y= count)) +
+  geom_line()
+
+ggplot(data = yearly_count_cap, aes(x = year, y = count, group = taxa, colour = taxa)) +
+  geom_line() + geom_point() + theme(axis.text.x = element_text(angle = 45, size = 5)) + theme_bw()
+
+#gams
+yearly_count_gam <- count_1982_2008 %>% 
+  group_by(year, taxa) %>% 
+  filter(taxa == "gammarid")
+
+ggplot(data = yearly_count_gam, aes(x = year, y= count)) +
+  geom_line()
+
+ggplot(data = yearly_count_gam, aes(x = year, y = count, group = taxa, colour = taxa)) +
+  geom_line() + geom_point() + theme(axis.text.x = element_text(angle = 45, size = 5)) + theme_bw()
+```
+
+```{r}
+yearly_count <- count_1982_2008 %>% 
+  group_by(year, taxa) %>% 
+  filter(taxa %in% c("caprellid", "gammarid", "copepod", "ostracods"))
+
+ggplot(data = yearly_count, aes(x = year, y= count)) +
+  geom_line()
+
+ggplot(data = yearly_count, aes(x = year, y = count, group = taxa, colour = taxa)) +
+  geom_line() + geom_point() + theme(axis.text.x = element_text(angle = 45, size = 5)) + theme_bw() + facet_wrap(~taxa)
+
+
+
+
+```
+
+
+
+```{r}
+unique(count_measure_2008_2014$month)
+unique(count_1982_2008$month)
+
+unique(count_1982_2008$site)
+unique(measure_1982_2008$site)
+unique(count_measure_2009_2014$site)
+unique(count_measure_2009_2014$month)
+```
+
+```{r}
+
+```
+
+

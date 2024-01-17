@@ -1,0 +1,34 @@
+---
+title: "scrapings_1"
+output: html_document
+date: "2023-07-05"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+install.packages("tidyverse")
+install.packages("here")
+install.packages("janitor")
+install.packages("BiodiversityR")
+install.packages("tcltk")
+install.packages('pbkrtest')
+install.packages("stringr")
+install.packages("readxl")
+```
+
+```{r}
+library(tidyverse)
+library(here)
+library(janitor)
+library(vegan)
+library(stringr)
+library(readxl)
+```
+
+
+
+
+
