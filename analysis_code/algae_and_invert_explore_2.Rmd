@@ -99,12 +99,12 @@ algae_matrix_biomass$richness <- apply(algae_matrix_biomass[,7:24], 1, function(
 algae_matrix_biomass$shannon <- diversity(algae_matrix_biomass_2, index = 'shannon') 
 algae_matrix_biomass$simpson <- diversity(algae_matrix_biomass_2, index = 'simpson') 
 algae_matrix_biomass$invsimpson <- diversity(algae_matrix_biomass_2, index = 'invsimpson') 
-algae_matrix_biomass <- algae_matrix_biomass %>% 
-  mutate(div_order1= exp(shannon))
-#add a column for every row that sums the algae biomass
+algae_matrix_biomass <- algae_matrix_biomass %>% mutate(div_order1= exp(shannon))
 algae_matrix_biomass$sum_algae_biomass <- rowSums(algae_matrix_biomass[,7:24])
-#add a column for every row that identifies the dominant algae species for values greater than zero
-algae_matrix_biomass$dominant_algae <- apply(algae_matrix_biomass[,7:24], 1, function(i) names(i)[i==max(i)])
+#algae_matrix_biomass$dominant_algae <- apply(algae_matrix_biomass[,7:24], 1, function(i) names(i) [i==max(i)])
+
+#creating a function defined outside the apply window
+#dominant_algae <- function(x) {if (x == 0) {return(NA)} else {return(names(x)[x==max(x)])}}
 
 #calculate which species of algae were the top 10 most dominant (in terms of biomass) over the entire time series
 dominant_algae_species <- algae_matrix_biomass %>% 
@@ -223,12 +223,176 @@ invert_order_test <- invert_scaled_order %>%
 
 #1/17/2023 updates
 ```{r}
-#create a master dataframe combining algae biomass and invert counts
-invert_algae <- merge(invert_family_matrix_richness, algae_matrix_biomass, by= c('year', 'month', 'date', 'site', 'depth', 'rep'))
+invert_algae <- merge(invert_family_matrix_richness, algae_matrix_biomass, by= c('year', 'month', 'date', 'site', 'depth', 'rep')) 
 
-invert_algae %>% 
-  mutate(dominant_algae = apply(algae_matrix_biomass[,7:24], 1, function(i) names(i)[i==max(i)]))
-
-
+  invert_algae$dominant_algae <- apply(invert_algae[,27:44], 1, function(x) 
+    {if (all(x == 0)) {return(NA)} else {return(names(x)[x == max(x, na.rm = TRUE)])}})
+  
+  #if there are two dominant species pick the one that is overall higher biomass
+  
 
 ```
+
+
+```{r}
+#create a plot of invert shannon diversity (shannon.x) versus algae biomass (sum_algae_biomass)
+invert_algae %>%
+  ggplot(aes(x = sum_algae_biomass, y = shannon.x)) +
+  geom_point() +
+  labs(title="Invert Shannon Diversity vs. Algae Biomass", x="Algae Biomass (g)", y="Invert Shannon Diversity") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  geom_point(aes(color = depth)) +
+  geom_point(aes(shape=dominant_algae))
+```
+
+#species accumulation curves
+```{r}
+#species accumulation curve  
+invert_species_curve <- specaccum(comm = invert_family_matrix_richness_2, method = "random", permutations = 1000) 
+#permutations means how many times you want the data to be reshuffled 
+
+plot(invert_species_curve, ci.type = "poly", col = "blue", lwd = 2, ci.lty = 0, ci.col = "lightblue", main = "Species accumulation curve", xlab = "Number of individuals", ylab = "Number of species")
+
+#species number
+specnumber(invert_family_matrix_richness_2)
+mean(specnumber(invert_family_matrix_richness_2))
+sd(specnumber(invert_family_matrix_richness_2))
+
+#chao estimator
+specpool(invert_family_matrix_richness_2, smallsample = TRUE)
+
+iNEXT(invert_family_matrix_richness_2, q = 0, datatype = "abundance", endpoint = 100, se = TRUE, conf = 0.95, size = 100, facet.var = "year", facet.ncol = 2, color = "year", pch = "year", linetype = "year", legend.title = "year", xlab = "Number of individuals", ylab = "Number of species", main = "Species accumulation curve")
+
+#plot how invertebrate species hill diversity changes over time
+invert_hill1 <- invert_family_matrix_richness %>% 
+  group_by(year) %>% 
+  summarise(mean_hill = mean(div_order1), sd_hill = sd(div_order1))
+
+invert_richness <- invert_family_matrix_richness %>% 
+  group_by(year) %>% 
+  summarise(mean_richness = mean(richness), sd_hill = sd(richness))
+
+#plot mean hill over time in a ggplot
+ggplot(invert_hill1, aes(x=year, y=mean_hill)) +
+  geom_point() +
+  geom_line() +
+  geom_errorbar(aes(ymin=mean_hill-sd_hill, ymax=mean_hill+sd_hill), width=.1) +
+  labs(title="Mean Hill Diversity Over Time", x="Year", y="Mean Hill Diversity") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+ggplot(invert_richness, aes(x=year, y=mean_richness)) +
+  geom_point() +
+  geom_line() +
+  geom_errorbar(aes(ymin=mean_richness-sd_hill, ymax=mean_richness+sd_hill), width=.1) +
+  labs(title="Mean Richness Over Time", x="Year", y="Mean Richness") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+```{r}
+hi <- invert_scaled %>%
+  distinct(date,site,depth,rep)%>%
+  group_by(date,site, depth)%>%
+  summarise(freq=n())
+```
+
+#sandbox
+```{r}
+boxplot(algae_stats$total_wetwt_g)
+histogram(algae_stats$total_wetwt_g)
+qqplot(year, total_wetwt_g)
+```
+
+#attempting to make a normalized density curve
+```{r}
+#copying the normalized density code
+algae_stats <- algae %>% 
+  group_by(year, site, depth, rep, scientific_name) %>% 
+  summarise(total_wetwt_g = sum(wet_wt),
+            total_biomass_gm2 = sum(biomass_gm2),
+            mean_wet_wt = mean(wet_wt),
+            sd_wet_wt = sd(wet_wt),
+            lower=mean_wet_wt- sd_wet_wt, 
+            upper=mean_wet_wt+ sd_wet_wt)
+
+algae_stats_ma <- algae_stats %>% 
+  filter(common_name == "Eisenia", "Gelidium robustum", "Chondracanthus spp.", "Gelidium nudifrons", "Articulated Corralines")
+
+cols8 <- c("#000000","#2271B2","#3DB7E9","#00B19F","#359B73","#d55e00","#e69f00","#f0e442")
+pd <- position_dodge(width=100)
+  ggplot(algae_stats aes(x=year,y=mean_wetwt,col=common_name))+
+      geom_hline(yintercept=0)+
+      geom_line(lwd=1,alpha=0.8,position=pd)+
+      geom_pointrange(aes(ymin=lower,ymax=upper),size=0.2,position=pd)+
+      xlab("year")+ylab("Mean wet weight")+
+      scale_color_manual(values=cols8[1:21],
+                         guide=guide_legend(title="",override.aes = list(size=0.5)))+
+      guides(linetype="none") +
+      theme(text = element_text(color="black",size=16),
+            axis.title=element_text(size=10),
+            axis.text.x=element_text(size=10),
+            legend.position = c(0.1,0.8),
+            legend.text = element_text(color="black",size=10),
+            legend.title = element_text(color="black",size=10))
+```
+
+```{r}
+#checking sampling freuqencies
+# shows consistency in sampling effort (except like 5 events)
+algae_freq <- algae %>%
+  distinct(date,site,depth,rep)%>%
+  group_by(date, site, depth)%>%
+  summarise(freq=n())
+
+algae_freq_2 <- algae %>%
+  distinct(date,site,depth)%>%
+  group_by(date, site)%>%
+  summarise(freq=n())
+```
+
+```{r}
+#time series graphs
+line_site <- function(usedate=0,points=0,df,xin,yin, colin=NULL, legendname=NULL, ylablein,titlein,startyear,endyear=2023, yearby=2)
+  
+algae1_plot <- algae %>% 
+  group_by(year, month, date, common_name, depth) %>% 
+  summarise(weight=sum(wet_wt)) %>% 
+  ungroup 
+
+algae2_plot <- algae %>% 
+  group_by(year, month, date, functional_group, depth) %>% 
+  summarise(weight=sum(wet_wt)) %>% 
+  ungroup 
+
+line_site(usedate=1,df = algae1,xin=date,yin=weight,
+          ylablein="Algae weight (g)",
+          titlein="Algae weight over time",
+          startyear=1995,endyear=2014,yearby=2)
+
+line_site(usedate=1,df = algae2_plot,xin=date,yin=weight,
+          ylablein="Algae weight (g)",
+          titlein="Algae weight over time",
+          startyear=1995,endyear=2014,yearby=2) +
+  facet_wrap(~functional_group)
+```
+
+```{r}
+#build a glm model
+#model 1
+algae_model1 <- glm(wet_wt ~ year + site + depth + rep, data = algae, family = gaussian)
+
+summary(algae_model1)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
